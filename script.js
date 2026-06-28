@@ -7,25 +7,28 @@
 
     const STORAGE_KEY = 'electionAppData_v2';
 
+    function getDefaultHouses() {
+        return [
+            { id: 'red', name: 'Red House', color: '#e74c3c' },
+            { id: 'green', name: 'Green House', color: '#27ae60' },
+            { id: 'yellow', name: 'Yellow House', color: '#f39c12' },
+            { id: 'blue', name: 'Blue House', color: '#3498db' }
+        ];
+    }
+
     function getDefaultCategories() {
         return [
-            { id: 'head_boy', name: 'Head Boy' },
-            { id: 'head_girl', name: 'Head Girl' },
-            { id: 'deputy_head_boy', name: 'Deputy Head Boy' },
-            { id: 'deputy_head_girl', name: 'Deputy Head Girl' },
-            { id: 'house_captain_red', name: 'House Captain (Red)' },
-            { id: 'house_vice_red', name: 'House Vice Captain (Red)' },
-            { id: 'house_captain_yellow', name: 'House Captain (Yellow)' },
-            { id: 'house_vice_yellow', name: 'House Vice Captain (Yellow)' },
-            { id: 'house_captain_green', name: 'House Captain (Green)' },
-            { id: 'house_vice_green', name: 'House Vice Captain (Green)' },
-            { id: 'house_captain_blue', name: 'House Captain (Blue)' },
-            { id: 'house_vice_blue', name: 'House Vice Captain (Blue)' },
-            { id: 'discipline_leader', name: 'Discipline Leader' },
-            { id: 'hygiene_leader', name: 'Hygiene Leader' },
-            { id: 'sports_captain', name: 'Sports Captain' },
-            { id: 'sports_vice_captain', name: 'Sports Vice Captain' },
-            { id: 'cultural_secretary', name: 'Cultural Secretary' }
+            { id: 'head_boy', name: 'Head Boy', houseSpecific: false, houseId: null },
+            { id: 'head_girl', name: 'Head Girl', houseSpecific: false, houseId: null },
+            { id: 'deputy_head_boy', name: 'Deputy Head Boy', houseSpecific: false, houseId: null },
+            { id: 'deputy_head_girl', name: 'Deputy Head Girl', houseSpecific: false, houseId: null },
+            { id: 'house_captain', name: 'House Captain', houseSpecific: true, houseId: null },
+            { id: 'house_vice_captain', name: 'House Vice Captain', houseSpecific: true, houseId: null },
+            { id: 'discipline_leader', name: 'Discipline Leader', houseSpecific: false, houseId: null },
+            { id: 'hygiene_leader', name: 'Hygiene Leader', houseSpecific: false, houseId: null },
+            { id: 'sports_captain', name: 'Sports Captain', houseSpecific: false, houseId: null },
+            { id: 'sports_vice_captain', name: 'Sports Vice Captain', houseSpecific: false, houseId: null },
+            { id: 'cultural_secretary', name: 'Cultural Secretary', houseSpecific: false, houseId: null }
         ];
     }
 
@@ -33,6 +36,7 @@
         return {
             schoolName: 'Springfield High',
             schoolSubtitle: 'Student Council Election 2026',
+            houses: getDefaultHouses(),
             categories: getDefaultCategories(),
             nominees: [],
             voters: [],
@@ -55,9 +59,18 @@
             const raw = localStorage.getItem(STORAGE_KEY);
             if (raw) {
                 const parsed = JSON.parse(raw);
+                // Ensure houses exist
+                if (!parsed.houses || parsed.houses.length === 0) {
+                    parsed.houses = getDefaultHouses();
+                }
                 // Ensure categories exist
                 if (!parsed.categories || parsed.categories.length === 0) {
                     parsed.categories = getDefaultCategories();
+                }
+                // Ensure categories have houseSpecific and houseId fields
+                for (const cat of parsed.categories) {
+                    if (cat.houseSpecific === undefined) cat.houseSpecific = false;
+                    if (cat.houseId === undefined) cat.houseId = null;
                 }
                 // Ensure settings fields
                 if (!parsed.settings) parsed.settings = {};
@@ -72,6 +85,18 @@
                 // Ensure school name/subtitle
                 if (!parsed.schoolName) parsed.schoolName = 'Springfield High';
                 if (!parsed.schoolSubtitle) parsed.schoolSubtitle = 'Student Council Election 2026';
+                // Ensure voters have houseId
+                if (parsed.voters) {
+                    for (const v of parsed.voters) {
+                        if (v.houseId === undefined) v.houseId = null;
+                    }
+                }
+                // Ensure nominees have houseId
+                if (parsed.nominees) {
+                    for (const n of parsed.nominees) {
+                        if (n.houseId === undefined) n.houseId = null;
+                    }
+                }
                 appData = parsed;
                 return;
             }
@@ -147,6 +172,10 @@
         return appData.categories.find(c => c.id === id);
     }
 
+    function getHouseById(id) {
+        return appData.houses.find(h => h.id === id);
+    }
+
     function getNomineeById(id) {
         return appData.nominees.find(n => n.id === id);
     }
@@ -157,6 +186,10 @@
 
     function getNomineesByCategory(categoryId) {
         return appData.nominees.filter(n => n.categoryId === categoryId);
+    }
+
+    function getNomineesByCategoryAndHouse(categoryId, houseId) {
+        return appData.nominees.filter(n => n.categoryId === categoryId && n.houseId === houseId);
     }
 
     // Compute results per category
@@ -198,6 +231,55 @@
             }
         }
         saveData();
+    }
+
+    // House CRUD functions
+    function addHouse(name, color) {
+        if (!name.trim()) return false;
+        const id = name.trim().toLowerCase().replace(/\s+/g, '_') + '_' + Date.now().toString(36);
+        if (appData.houses.some(h => h.name.toLowerCase() === name.trim().toLowerCase())) {
+            showToast('House already exists.', 'error');
+            return false;
+        }
+        appData.houses.push({ id, name: name.trim(), color: color || '#3498db' });
+        saveData();
+        renderAllSettings();
+        showToast(`House "${name.trim()}" added.`, 'success');
+        return true;
+    }
+
+    function removeHouse(id) {
+        // Check if any voters are assigned to this house
+        const votersInHouse = appData.voters.filter(v => v.houseId === id);
+        if (votersInHouse.length > 0) {
+            showToast(`Cannot remove house with ${votersInHouse.length} voters assigned. Reassign voters first.`, 'error');
+            return false;
+        }
+        // Check if any nominees are assigned to this house
+        const nomineesInHouse = appData.nominees.filter(n => n.houseId === id);
+        if (nomineesInHouse.length > 0) {
+            showToast(`Cannot remove house with ${nomineesInHouse.length} nominees assigned. Reassign nominees first.`, 'error');
+            return false;
+        }
+        // Check if any categories are house-specific for this house
+        const categoriesForHouse = appData.categories.filter(c => c.houseSpecific && c.houseId === id);
+        if (categoriesForHouse.length > 0) {
+            showToast(`Cannot remove house with ${categoriesForHouse.length} house-specific categories. Remove categories first.`, 'error');
+            return false;
+        }
+        appData.houses = appData.houses.filter(h => h.id !== id);
+        saveData();
+        renderAllSettings();
+        showToast('House removed.', 'info');
+        return true;
+    }
+
+    function resetDefaultHouses() {
+        if (!confirm('Reset to default houses? This will remove all current houses.')) return;
+        appData.houses = getDefaultHouses();
+        saveData();
+        renderAllSettings();
+        showToast('Houses reset to default.', 'success');
     }
 
     function getVoteCountForNominee(nomineeId) {
@@ -381,9 +463,10 @@
         let html = '';
         for (const cat of appData.categories) {
             const nomineeCount = getNomineesByCategory(cat.id).length;
+            const houseLabel = cat.houseSpecific ? (cat.houseId ? ` (${getHouseById(cat.houseId)?.name || 'Unknown'})` : ' (All Houses)') : '';
             html += `
                 <div class="category-item">
-                    <span class="cat-name">${cat.name} <span class="text-muted text-small">(${nomineeCount} nominees)</span></span>
+                    <span class="cat-name">${cat.name}${houseLabel} <span class="text-muted text-small">(${nomineeCount} nominees)</span></span>
                     <div class="cat-actions">
                         <button class="btn btn-danger btn-xs remove-category" data-id="${cat.id}"><i class="fas fa-trash"></i></button>
                     </div>
@@ -399,6 +482,54 @@
                 }
             });
         });
+    }
+
+    function renderHouseList() {
+        const container = document.getElementById('houseList');
+        if (appData.houses.length === 0) {
+            container.innerHTML = '<div class="text-muted">No houses defined.</div>';
+            return;
+        }
+        let html = '';
+        for (const h of appData.houses) {
+            const voterCount = appData.voters.filter(v => v.houseId === h.id).length;
+            html += `
+                <div class="category-item">
+                    <span class="cat-name">
+                        <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${h.color};margin-right:8px;"></span>
+                        ${h.name} <span class="text-muted text-small">(${voterCount} voters)</span>
+                    </span>
+                    <div class="cat-actions">
+                        <button class="btn btn-danger btn-xs remove-house" data-id="${h.id}"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>
+            `;
+        }
+        container.innerHTML = html;
+        container.querySelectorAll('.remove-house').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const id = this.dataset.id;
+                removeHouse(id);
+            });
+        });
+    }
+
+    function populateHouseSelect(selectId, includeAll = false) {
+        const select = document.getElementById(selectId);
+        if (!select) return;
+        select.innerHTML = '';
+        if (includeAll) {
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'All Houses';
+            select.appendChild(opt);
+        }
+        for (const h of appData.houses) {
+            const opt = document.createElement('option');
+            opt.value = h.id;
+            opt.textContent = h.name;
+            select.appendChild(opt);
+        }
     }
 
     function renderNomineeList() {
@@ -562,14 +693,14 @@
     //  6.  CORE OPERATIONS
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    function addCategory(name) {
+    function addCategory(name, houseSpecific = false, houseId = null) {
         if (!name.trim()) return false;
         const id = name.trim().toLowerCase().replace(/\s+/g, '_') + '_' + Date.now().toString(36);
         if (appData.categories.some(c => c.name.toLowerCase() === name.trim().toLowerCase())) {
             showToast('Category already exists.', 'error');
             return false;
         }
-        appData.categories.push({ id, name: name.trim() });
+        appData.categories.push({ id, name: name.trim(), houseSpecific, houseId });
         appData.results[id] = {};
         saveData();
         renderAllSettings();
@@ -607,7 +738,7 @@
         showToast('Categories reset to default.', 'success');
     }
 
-    function addNominee(name, categoryId, photo, problems, whyMe) {
+    function addNominee(name, categoryId, photo, problems, whyMe, houseId = null) {
         if (!name || !categoryId) return false;
         if (appData.nominees.some(n => n.name.toLowerCase() === name.toLowerCase() && n.categoryId === categoryId)) {
             showToast('A nominee with this name already exists in this category.', 'error');
@@ -617,6 +748,7 @@
             id: generateId(),
             name: name.trim(),
             categoryId: categoryId,
+            houseId: houseId,
             photo: photo || '',
             manifesto: {
                 problems: problems || '',
@@ -666,9 +798,16 @@
             const parts = lines[i].split(',').map(s => s.trim());
             if (parts.length < 2) continue;
             const roll = parts[0];
-            const name = parts.slice(1).join(',').trim();
+            const name = parts.slice(1, parts.length - 1).join(',').trim();
+            const houseId = parts[parts.length - 1] || null;
             if (!roll || !name) continue;
             if (appData.voters.some(v => v.rollNumber.toLowerCase() === roll.toLowerCase())) {
+                skipped++;
+                continue;
+            }
+            // Validate houseId if provided
+            if (houseId && !getHouseById(houseId)) {
+                showToast(`House "${houseId}" not found for voter ${roll}. Skipping.`, 'error');
                 skipped++;
                 continue;
             }
@@ -676,6 +815,7 @@
                 id: generateId(),
                 rollNumber: roll,
                 name: name,
+                houseId: houseId,
                 hasVoted: false,
                 skipped: false,
                 pinHash: null,
@@ -707,9 +847,10 @@
             if (parts.length < 2) continue;
             const name = parts[0];
             const categoryId = parts[1];
-            const photo = parts[2] || '';
-            const problems = parts[3] || '';
-            const whyMe = parts[4] || '';
+            const houseId = parts[2] || null;
+            const photo = parts[3] || '';
+            const problems = parts[4] || '';
+            const whyMe = parts[5] || '';
             
             if (!name || !categoryId) continue;
             
@@ -717,6 +858,13 @@
             const category = getCategoryById(categoryId);
             if (!category) {
                 showToast(`Category "${categoryId}" not found. Skipping "${name}".`, 'error');
+                skipped++;
+                continue;
+            }
+            
+            // Validate houseId if provided
+            if (houseId && !getHouseById(houseId)) {
+                showToast(`House "${houseId}" not found for nominee "${name}". Skipping.`, 'error');
                 skipped++;
                 continue;
             }
@@ -731,6 +879,7 @@
                 id: generateId(),
                 name: name,
                 categoryId: categoryId,
+                houseId: houseId,
                 photo: photo,
                 manifesto: {
                     problems: problems,
@@ -755,14 +904,15 @@
             showToast('No nominees to export.', 'error');
             return;
         }
-        let csv = 'name,categoryId,photoUrl,problems,whyMe\n';
+        let csv = 'name,categoryId,houseId,photoUrl,problems,whyMe\n';
         for (const n of appData.nominees) {
             const cat = getCategoryById(n.categoryId);
             const catId = cat ? cat.id : n.categoryId;
+            const houseId = n.houseId || '';
             const photo = n.photo || '';
             const problems = (n.manifesto?.problems || '').replace(/,/g, ' ');
             const whyMe = (n.manifesto?.whyMe || '').replace(/,/g, ' ');
-            csv += `${n.name},${catId},${photo},${problems},${whyMe}\n`;
+            csv += `${n.name},${catId},${houseId},${photo},${problems},${whyMe}\n`;
         }
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
@@ -772,6 +922,61 @@
         a.click();
         URL.revokeObjectURL(url);
         showToast('Nominees exported.', 'success');
+    }
+
+    function importHouses(csvText) {
+        const lines = csvText.split(/\r?\n/).filter(line => line.trim() !== '');
+        if (lines.length === 0) {
+            showToast('CSV is empty.', 'error');
+            return;
+        }
+        let added = 0,
+            skipped = 0;
+        let startIdx = 0;
+        const first = lines[0].toLowerCase();
+        if (first.includes('name') && first.includes('color')) {
+            startIdx = 1;
+        }
+        for (let i = startIdx; i < lines.length; i++) {
+            const parts = lines[i].split(',').map(s => s.trim());
+            if (parts.length < 1) continue;
+            const name = parts[0];
+            const color = parts[1] || '#3498db';
+            
+            if (!name) continue;
+            
+            // Check for duplicate
+            if (appData.houses.some(h => h.name.toLowerCase() === name.toLowerCase())) {
+                skipped++;
+                continue;
+            }
+            
+            const id = name.toLowerCase().replace(/\s+/g, '_') + '_' + Date.now().toString(36);
+            appData.houses.push({ id, name: name, color: color });
+            added++;
+        }
+        saveData();
+        renderAllSettings();
+        showToast(`Imported ${added} houses (${skipped} duplicates skipped).`, 'success');
+    }
+
+    function exportHouses() {
+        if (appData.houses.length === 0) {
+            showToast('No houses to export.', 'error');
+            return;
+        }
+        let csv = 'name,color\n';
+        for (const h of appData.houses) {
+            csv += `${h.name},${h.color}\n`;
+        }
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `houses_${new Date().toISOString().slice(0,10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('Houses exported.', 'success');
     }
 
     function clearAllVoters() {
@@ -1113,8 +1318,11 @@
 
     function renderAllSettings() {
         renderSettingsGeneral();
+        renderHouseList();
         renderCategoryList();
         populateCategorySelect();
+        populateHouseSelect('categoryHouseSelect');
+        populateHouseSelect('nomHouseSelect');
         renderNomineeList();
         renderVoterList();
         renderStats();
@@ -1294,17 +1502,104 @@
         });
 
         // ─── Settings: Categories ───
+        document.getElementById('categoryHouseSpecific').addEventListener('change', function() {
+            const wrap = document.getElementById('categoryHouseSelectWrap');
+            wrap.style.display = this.checked ? 'block' : 'none';
+        });
+
         document.getElementById('addCategoryForm').addEventListener('submit', function(e) {
             e.preventDefault();
             const name = document.getElementById('newCategoryName').value.trim();
-            if (addCategory(name)) {
+            const houseSpecific = document.getElementById('categoryHouseSpecific').checked;
+            const houseId = houseSpecific ? document.getElementById('categoryHouseSelect').value : null;
+            if (addCategory(name, houseSpecific, houseId)) {
                 this.reset();
+                document.getElementById('categoryHouseSelectWrap').style.display = 'none';
             }
         });
 
         document.getElementById('resetDefaultCategoriesBtn').addEventListener('click', resetDefaultCategories);
 
+        // ─── Settings: Houses ───
+        document.getElementById('addHouseForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const name = document.getElementById('newHouseName').value.trim();
+            const color = document.getElementById('newHouseColor').value;
+            if (addHouse(name, color)) {
+                this.reset();
+            }
+        });
+
+        document.getElementById('resetDefaultHousesBtn').addEventListener('click', resetDefaultHouses);
+
+        // ─── Settings: Houses CSV Import/Export ───
+        const houseDropArea = document.getElementById('houseCsvDropArea');
+        const houseFileInput = document.getElementById('houseCsvFileInput');
+
+        houseDropArea.addEventListener('click', () => houseFileInput.click());
+        houseDropArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            houseDropArea.style.borderColor = 'var(--primary)';
+            houseDropArea.style.background = '#e8f0fe';
+        });
+        houseDropArea.addEventListener('dragleave', () => {
+            houseDropArea.style.borderColor = '#dce3ec';
+            houseDropArea.style.background = '#fafcfe';
+        });
+        houseDropArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            houseDropArea.style.borderColor = '#dce3ec';
+            houseDropArea.style.background = '#fafcfe';
+            if (e.dataTransfer.files.length > 0) {
+                houseFileInput.files = e.dataTransfer.files;
+                handleHouseCsvFile(e.dataTransfer.files[0]);
+            }
+        });
+        houseFileInput.addEventListener('change', function() {
+            if (this.files.length > 0) {
+                handleHouseCsvFile(this.files[0]);
+            }
+            this.value = '';
+        });
+
+        async function handleHouseCsvFile(file) {
+            try {
+                const text = await file.text();
+                importHouses(text);
+            } catch (_) {
+                showToast('Failed to read file.', 'error');
+            }
+        }
+
+        document.getElementById('sampleHouseCsvBtn').addEventListener('click', function() {
+            const sample = `name,color
+Red House,#e74c3c
+Green House,#27ae60
+Yellow House,#f39c12
+Blue House,#3498db`;
+            const blob = new Blob([sample], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'sample_houses.csv';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        document.getElementById('exportHousesBtn').addEventListener('click', exportHouses);
+
         // ─── Settings: Nominees ───
+        document.getElementById('nomCategory').addEventListener('change', function() {
+            const cat = getCategoryById(this.value);
+            const wrap = document.getElementById('nomineeHouseSelectWrap');
+            if (cat && cat.houseSpecific) {
+                wrap.style.display = 'block';
+                populateHouseSelect('nomHouseSelect');
+            } else {
+                wrap.style.display = 'none';
+            }
+        });
+
         document.getElementById('addNomineeForm').addEventListener('submit', function(e) {
             e.preventDefault();
             const name = document.getElementById('nomName').value.trim();
@@ -1312,15 +1607,22 @@
             const photo = document.getElementById('nomPhoto').value.trim();
             const problems = document.getElementById('nomProblems').value.trim();
             const why = document.getElementById('nomWhy').value.trim();
+            const cat = getCategoryById(categoryId);
+            const houseId = (cat && cat.houseSpecific) ? document.getElementById('nomHouseSelect').value : null;
             if (!name || !categoryId) {
                 showToast('Please fill in name and category.', 'error');
                 return;
             }
-            if (addNominee(name, categoryId, photo, problems, why)) {
+            if (cat && cat.houseSpecific && !houseId) {
+                showToast('Please select a house for this house-specific category.', 'error');
+                return;
+            }
+            if (addNominee(name, categoryId, photo, problems, why, houseId)) {
                 this.reset();
                 document.getElementById('nomPhoto').value = '';
                 document.getElementById('nomProblems').value = '';
                 document.getElementById('nomWhy').value = '';
+                document.getElementById('nomineeHouseSelectWrap').style.display = 'none';
                 renderNomineeList();
                 renderStats();
             }
